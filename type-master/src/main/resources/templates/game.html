@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Typing Game</title>
+</head>
+<body>
+
+<h1>Typing Game</h1>
+
+<div id="word"
+     th:text="${words[0].text}">
+</div>
+
+<input type="text" id="input" autofocus />
+
+<script>
+    const input = document.getElementById("input");
+    const wordDiv = document.getElementById("word");
+
+    input.addEventListener("input", () => {
+        if (input.value === wordDiv.textContent) {
+            alert("Correct!");
+        }
+    });
+</script>
+
+</body>
+</html>
