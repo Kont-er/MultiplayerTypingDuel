@@ -8,6 +8,7 @@ import java.sql.Connection;
 import java.util.List;
 
 import com.typemaster.typemaster.database.Database;
+import com.typemaster.typemaster.model.Word;
 import com.typemaster.typemaster.repository.WordRepository;
 
 import java.io.InputStream;
@@ -28,16 +29,19 @@ public class GameHandler implements HttpHandler {
             Connection conn = Database.connect();
 
             // Fetch words
-            List<String> words = WordRepository.findAll(conn);
+            List<Word> words = WordRepository.findAll(conn);
 
             // Load HTML template
             String template = loadHtmlTemplate();
 
             // Pick a word (basic logic)
-            String word = words.isEmpty() ? "no words" : words.get(0);
+            Word word = words.get(0);
+            String text = word.getText();
+            String difficulty = word.getDifficulty();
+            String wordPicked = words.isEmpty() ? "no words" : text;
 
             // Inject word into template
-            String html = renderHtml(template, word);
+            String html = renderHtml(template, wordPicked);
 
             // Send response
             byte[] responseBytes = html.getBytes(StandardCharsets.UTF_8);

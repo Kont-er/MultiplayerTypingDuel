@@ -5,6 +5,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.typemaster.typemaster.model.Word;
+
 import java.sql.Statement;
 
 public class WordRepository {
@@ -20,20 +23,21 @@ public class WordRepository {
         ps.close();
     }
 
-    public static List<String> findAll(Connection conn) throws Exception {
-        List<String> words = new ArrayList<>();
+    public static List<Word> findAll(Connection conn) throws Exception {
 
-        String sql = "SELECT text FROM words";
+        List<Word> words = new ArrayList<>();
+
+        String sql = "SELECT text, difficulty FROM words";
 
         Statement stmt = conn.createStatement();
         ResultSet rs = stmt.executeQuery(sql);
 
         while (rs.next()) {
-            words.add(rs.getString("text"));
+            words.add(new Word(
+                rs.getString("text"),
+                rs.getString("difficulty")
+            ));
         }
-
-        rs.close();
-        stmt.close();
 
         return words;
     }

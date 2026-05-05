@@ -2,6 +2,7 @@ package com.typemaster.typemaster;
 
 import java.net.InetSocketAddress;
 
+import com.typemaster.typemaster.API.ApiHandler;
 import com.typemaster.typemaster.controller.GameHandler;
 import com.typemaster.typemaster.database.DatabaseSetup;
 
@@ -20,7 +21,8 @@ public class TypeMasterApplication {
 
             // 3. Route
             server.createContext("/", new GameHandler());
-
+			server.createContext("/api/words", new ApiHandler());
+			
             server.setExecutor(null);
             server.start();
 
