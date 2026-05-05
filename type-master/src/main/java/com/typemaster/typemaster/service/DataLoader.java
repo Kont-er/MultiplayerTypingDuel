@@ -1,27 +1,60 @@
 package com.typemaster.typemaster.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.typemaster.typemaster.model.Word;
 import com.typemaster.typemaster.repository.WordRepository;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+
 import java.io.InputStream;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
 
 @Configuration
 public class DataLoader {
 
-    @Bean
-    CommandLineRunner loadData(WordRepository repo) {
-        return args -> {
-            ObjectMapper mapper = new ObjectMapper();
-            InputStream is = getClass().getResourceAsStream("/data.json");
+    public static void loadWords(Connection conn) throws Exception {
 
-            List<Word> words = mapper.readValue(is, new TypeReference<>() {});
-            repo.saveAll(words);
-        };
+        InputStream is = DataLoader.class
+                .getClassLoader()
+                .getResourceAsStream("data.json");
+
+        if (is == null) {
+            throw new RuntimeException("data.json not found");
+        }
+
+        String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+
+        // Remove outer brackets
+        json = json.trim();
+        json = json.substring(1, json.length() - 1);
+
+        // Split objects (VERY naive but works for your format)
+        String[] objects = json.split("\\},\\s*\\{");
+
+        for (String obj : objects) {
+
+            obj = obj.replace("{", "").replace("}", "");
+
+            String[] fields = obj.split(",");
+
+            String text = "";
+            String difficulty = "";
+
+            for (String field : fields) {
+                String[] keyValue = field.split(":");
+
+                String key = keyValue[0].replace("\"", "").trim();
+                String value = keyValue[1].replace("\"", "").trim();
+
+                if (key.equals("text")) {
+                    text = value;
+                } else if (key.equals("difficulty")) {
+                    difficulty = value;
+                }
+            }
+
+            WordRepository.insert(conn, text, difficulty);
+        }
+
+        System.out.println("JSON loaded manually (raw parser)");
     }
 }
