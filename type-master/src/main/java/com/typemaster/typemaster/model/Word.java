@@ -1,8 +1,6 @@
 package com.typemaster.typemaster.model;
-import jakarta.persistence.*;
 import lombok.*;
 
-@Entity
 @Data
 public class Word {
     private String text;

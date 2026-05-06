@@ -1,14 +1,12 @@
 package com.typemaster.typemaster.service;
 
 import com.typemaster.typemaster.repository.WordRepository;
-import org.springframework.context.annotation.Configuration;
 
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 
-@Configuration
 public class DataLoader {
 
     public static void loadWords(Connection conn) throws Exception {
