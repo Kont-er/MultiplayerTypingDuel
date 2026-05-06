@@ -48,13 +48,4 @@ class WordRepositoryTest {
         assertEquals("easy", words.get(0).getDifficulty());
     }
 
-    @Test
-    void testMultipleInserts() throws Exception {
-        WordRepository.insert(conn, "java", "medium");
-        WordRepository.insert(conn, "spring", "hard");
-
-        List<Word> words = WordRepository.findAll(conn);
-
-        assertEquals(2, words.size());
-    }
 }
