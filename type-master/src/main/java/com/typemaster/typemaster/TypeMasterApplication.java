@@ -1,31 +1,33 @@
 package com.typemaster.typemaster;
 
-import java.net.InetSocketAddress;
-
-import com.typemaster.typemaster.API.ApiHandler;
-import com.typemaster.typemaster.WebSocket.GameServer;
-import com.typemaster.typemaster.controller.GameHandler;
-import com.typemaster.typemaster.database.DatabaseSetup;
-
-import com.sun.net.httpserver.HttpServer;
-
 import io.javalin.Javalin;
 import io.javalin.websocket.WsContext;
+
+import com.typemaster.typemaster.database.DatabaseSetup;
 import com.typemaster.typemaster.database.Database;
 import com.typemaster.typemaster.repository.WordRepository;
+import com.typemaster.typemaster.model.Word;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-
 public class TypeMasterApplication {
-// Room management
-    private static final Map<String, List<WsContext>> rooms = new ConcurrentHashMap<>();
+
+    // --- ROOM STATE ---
+    static class RoomState {
+        List<WsContext> players = Collections.synchronizedList(new ArrayList<>());
+        List<Word> words = new ArrayList<>();
+        boolean started = false;
+        boolean finished = false;
+        long startTime = 0;
+    }
+
+    private static final Map<String, RoomState> rooms = new ConcurrentHashMap<>();
     private static final Map<WsContext, String> playerRoom = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         DatabaseSetup.init();
 
-        // Use Railway's port
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
 
         Javalin app = Javalin.create(config -> {
@@ -34,7 +36,7 @@ public class TypeMasterApplication {
             });
         }).start(port);
 
-        // --- HTTP ROUTES ---
+        // --- OPTIONAL HTTP ROUTE ---
         app.get("/api/words", ctx -> {
             var conn = Database.connect();
             var words = WordRepository.findAll(conn);
@@ -42,64 +44,163 @@ public class TypeMasterApplication {
             conn.close();
         });
 
-        // --- WEBSOCKET ROUTE ---
+        // --- WEBSOCKET ---
         app.ws("/ws", ws -> {
-            ws.onConnect(ctx -> System.out.println("New Connection: " + ctx.sessionId()));
+
+            ws.onConnect(ctx -> {
+                System.out.println("New Connection: " + ctx.sessionId());
+            });
 
             ws.onMessage(ctx -> {
-                // Using your existing simple parser logic (or Jackson)
-                String message = ctx.message();
-                Map<String, String> msg = simpleParse(message);
+                Map<String, String> msg = simpleParse(ctx.message());
                 String type = msg.get("type");
 
+                // --- JOIN ---
                 if ("JOIN".equals(type)) {
-                    String room = msg.get("room");
-                    rooms.computeIfAbsent(room, k -> Collections.synchronizedList(new ArrayList<>())).add(ctx);
-                    playerRoom.put(ctx, room);
-                    
-                    broadcast(room, "{\"type\":\"PLAYER_JOINED\",\"count\":" + rooms.get(room).size() + "}");
+                    String roomId = msg.get("room");
+
+                    RoomState room = rooms.computeIfAbsent(roomId, k -> new RoomState());
+                    room.players.add(ctx);
+                    playerRoom.put(ctx, roomId);
+
+                    broadcast(roomId, "{\"type\":\"PLAYER_JOINED\",\"count\":" + room.players.size() + "}");
+
+                    if (room.players.size() == 2 && !room.started) {
+                        startGame(roomId, room);
+                    }
                 }
 
+                // --- PROGRESS ---
                 if ("PROGRESS".equals(type)) {
-                    String room = playerRoom.get(ctx);
-                    String index = msg.get("index");
-                    broadcast(room, "{\"type\":\"PROGRESS\",\"index\":" + index + "}");
-                }
+                    String roomId = playerRoom.get(ctx);
+                    RoomState room = rooms.get(roomId);
 
-                if ("FINISH".equals(type)) {
-                    String room = playerRoom.get(ctx);
-                    broadcast(room, "{\"type\":\"GAME_OVER\",\"winner\":\"Player " + ctx.sessionId().substring(0, 4) + "\"}");
+                    if (room == null || !room.started || room.finished) return;
+
+                    int index = Integer.parseInt(msg.get("index"));
+
+                    broadcast(roomId, "{\"type\":\"PROGRESS\",\"index\":" + index + "}");
+
+                    // --- WIN CONDITION ---
+                    if (index >= room.words.size()) {
+                        room.finished = true;
+
+                        String winner = "Player " + ctx.sessionId().substring(0, 4);
+
+                        broadcast(roomId, "{\"type\":\"GAME_OVER\",\"winner\":\"" + winner + "\"}");
+                    }
                 }
             });
 
             ws.onClose(ctx -> {
-                String room = playerRoom.get(ctx);
-                if (room != null) {
-                    rooms.get(room).remove(ctx);
-                    if (rooms.get(room).isEmpty()) rooms.remove(room);
+                String roomId = playerRoom.get(ctx);
+
+                if (roomId != null) {
+                    RoomState room = rooms.get(roomId);
+
+                    if (room != null) {
+                        room.players.remove(ctx);
+
+                        if (room.players.isEmpty()) {
+                            rooms.remove(roomId);
+                        }
+                    }
                 }
+
                 playerRoom.remove(ctx);
+                System.out.println("Disconnected: " + ctx.sessionId());
             });
         });
     }
 
-    private static void broadcast(String room, String message) {
-        List<WsContext> players = rooms.get(room);
-        if (players != null) {
-            players.forEach(session -> {
-                if (session.session.isOpen()) session.send(message);
-            });
+    // --- START GAME ---
+    private static void startGame(String roomId, RoomState room) {
+        try {
+            var conn = Database.connect();
+            List<Word> allWords = WordRepository.findAll(conn);
+            conn.close();
+
+            Collections.shuffle(allWords);
+
+            // Take 15 words
+            room.words = allWords.subList(0, Math.min(15, allWords.size()));
+
+            // Send words
+            String wordsJson = buildWordsJson(room.words);
+            broadcast(roomId, "{\"type\":\"WORDS\",\"words\":" + wordsJson + "}");
+
+            // Countdown
+            new Thread(() -> {
+                try {
+                    for (int i = 3; i >= 1; i--) {
+                        broadcast(roomId, "{\"type\":\"COUNTDOWN\",\"value\":" + i + "}");
+                        Thread.sleep(1000);
+                    }
+
+                    room.started = true;
+                    room.startTime = System.currentTimeMillis();
+
+                    broadcast(roomId, "{\"type\":\"START\",\"startTime\":" + room.startTime + "}");
+
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }).start();
+
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
-    // Your existing parser logic
+    // --- BROADCAST ---
+    private static void broadcast(String roomId, String message) {
+        RoomState room = rooms.get(roomId);
+        if (room == null) return;
+
+        for (WsContext player : room.players) {
+            if (player.session.isOpen()) {
+                player.send(message);
+            }
+        }
+    }
+
+    // --- BUILD WORDS JSON ---
+    private static String buildWordsJson(List<Word> words) {
+        StringBuilder sb = new StringBuilder("[");
+
+        for (int i = 0; i < words.size(); i++) {
+            Word w = words.get(i);
+
+            sb.append("{\"text\":\"")
+              .append(w.getText())
+              .append("\",\"difficulty\":\"")
+              .append(w.getDifficulty())
+              .append("\"}");
+
+            if (i < words.size() - 1) sb.append(",");
+        }
+
+        sb.append("]");
+        return sb.toString();
+    }
+
+    // --- SIMPLE JSON PARSER ---
     private static Map<String, String> simpleParse(String json) {
         Map<String, String> map = new HashMap<>();
-        String clean = json.replace("{", "").replace("}", "").replace("\"", "");
+
+        String clean = json
+                .replace("{", "")
+                .replace("}", "")
+                .replace("\"", "");
+
         for (String part : clean.split(",")) {
             String[] kv = part.split(":");
-            if (kv.length == 2) map.put(kv[0].trim(), kv[1].trim());
+            if (kv.length == 2) {
+                map.put(kv[0].trim(), kv[1].trim());
+            }
         }
+
         return map;
     }
 }
+
