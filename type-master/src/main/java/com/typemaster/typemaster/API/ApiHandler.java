@@ -20,6 +20,9 @@ public class ApiHandler implements HttpHandler {
                 return;
             }
 
+            exchange.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            
             Connection conn = Database.connect();
 
             List<Word> words = WordRepository.findAll(conn);

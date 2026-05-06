@@ -1,0 +1,197 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+
+export default function App() {
+  const [words, setWords] = useState([]);
+  const [index, setIndex] = useState(0);
+  const [input, setInput] = useState("");
+  const [score, setScore] = useState(0);
+
+  const [isConnected, setIsConnected] = useState(false);
+  const [opponentProgress, setOpponentProgress] = useState(0);
+  const [gameFinished, setGameFinished] = useState(false);
+
+  const socketRef = useRef(null);
+
+  // room from URL
+  const roomId = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("room") || null;
+  }, []);
+
+  // load words (15 max)
+  useEffect(() => {
+    fetch("http://localhost:8080/api/words")
+      .then(res => res.json())
+      .then(data => setWords(data.slice(0, 15)))
+      .catch(err => console.error(err));
+  }, []);
+
+  // WebSocket setup
+  useEffect(() => {
+    if (!roomId) return;
+
+    const socket = new WebSocket("ws://localhost:8081");
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      console.log("WS connected");
+
+      socket.send(JSON.stringify({
+        type: "JOIN",
+        room: roomId
+      }));
+    };
+
+    socket.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === "PLAYER_JOINED") {
+  if (msg.count >= 2) {
+    setIsConnected(true);
+  }
+}
+
+      if (msg.type === "PROGRESS") {
+        setOpponentProgress(msg.index);
+      }
+
+      if (msg.type === "GAME_OVER") {
+        setGameFinished(true);
+        alert("Game Over! Winner: " + msg.winner);
+      }
+    };
+
+    socket.onclose = () => {
+      setIsConnected(false);
+    };
+
+    return () => socket.close();
+  }, [roomId]);
+
+  const currentWord = words[index];
+
+  // typing logic
+  const handleChange = (e) => {
+    const value = e.target.value;
+    setInput(value);
+
+    if (!currentWord || gameFinished) return;
+
+    if (value === currentWord.text) {
+      const nextIndex = index + 1;
+
+      setScore(prev => prev + 1);
+      setInput("");
+
+      // send progress to opponent
+      socketRef.current?.send(JSON.stringify({
+        type: "PROGRESS",
+        index: nextIndex
+      }));
+
+      // finish game
+      if (nextIndex >= words.length) {
+        socketRef.current?.send(JSON.stringify({
+          type: "FINISH"
+        }));
+
+        setGameFinished(true);
+        return;
+      }
+
+      setIndex(nextIndex);
+    }
+  };
+
+  // invite system
+  const createInvite = () => {
+    const room = Math.random().toString(36).substring(2, 8);
+    const link = `${window.location.origin}?room=${room}`;
+
+    navigator.clipboard.writeText(link);
+    alert("Invite copied:\n" + link);
+  };
+
+  const resetGame = () => {
+    setIndex(0);
+    setScore(0);
+    setInput("");
+    setGameFinished(false);
+    setOpponentProgress(0);
+  };
+
+  if (words.length === 0) {
+    return <h2>Loading words...</h2>;
+  }
+
+  return (
+    <div style={{ padding: 20, fontFamily: "Arial" }}>
+
+      {/* HEADER */}
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <h1>Typing Duel</h1>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              backgroundColor: isConnected ? "green" : "red"
+            }}
+          />
+          <span>{isConnected ? "Opponent Connected" : "Waiting..."}</span>
+        </div>
+      </div>
+
+      {/* ROOM + INVITE */}
+      <button onClick={createInvite}>Invite Friend</button>
+
+      {roomId && (
+        <p>Room: <b>{roomId}</b></p>
+      )}
+
+      {/* GAME OVER */}
+      {gameFinished && (
+        <div style={{
+          padding: 20,
+          background: "black",
+          color: "white",
+          marginTop: 20
+        }}>
+          🎉 Game Over!
+          <br />
+          <button onClick={resetGame}>Play Again</button>
+        </div>
+      )}
+
+      {/* GAME */}
+      {!gameFinished && currentWord && (
+        <>
+          <h3>Score: {score}</h3>
+
+          <p>Your Progress: {index} / {words.length}</p>
+          <p>Opponent Progress: {opponentProgress}</p>
+
+          <p>Difficulty: {currentWord.difficulty}</p>
+
+          <h1 style={{ color: "blue" }}>
+            {currentWord.text}
+          </h1>
+
+          <input
+            value={input}
+            onChange={handleChange}
+            autoFocus
+            style={{
+              fontSize: 20,
+              padding: 10,
+              width: 300
+            }}
+          />
+        </>
+      )}
+
+    </div>
+  );
+}

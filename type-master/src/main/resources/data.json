@@ -1,5 +1,19 @@
 [
   { "text": "cat", "difficulty": "easy" },
+  { "text": "dog", "difficulty": "easy" },
+  { "text": "sun", "difficulty": "easy" },
+  { "text": "tree", "difficulty": "easy" },
+  { "text": "book", "difficulty": "easy" },
+
   { "text": "keyboard", "difficulty": "medium" },
-  { "text": "synchronization", "difficulty": "hard" }
+  { "text": "window", "difficulty": "medium" },
+  { "text": "monitor", "difficulty": "medium" },
+  { "text": "react", "difficulty": "medium" },
+  { "text": "backend", "difficulty": "medium" },
+
+  { "text": "synchronization", "difficulty": "hard" },
+  { "text": "multithreading", "difficulty": "hard" },
+  { "text": "polymorphism", "difficulty": "hard" },
+  { "text": "architecture", "difficulty": "hard" },
+  { "text": "asynchronous", "difficulty": "hard" }
 ]
