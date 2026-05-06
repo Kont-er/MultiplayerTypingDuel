@@ -23,6 +23,8 @@ public class TypeMasterApplication {
     private static final Map<WsContext, String> playerRoom = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
+        DatabaseSetup.init();
+
         // Use Railway's port
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
 
