@@ -11,6 +11,7 @@ export default function App() {
   const [gameFinished, setGameFinished] = useState(false);
 
   const socketRef = useRef(null);
+  const BASE_URL = "type-master.up.railway.app";
 
   // room from URL
   const roomId = useMemo(() => {
@@ -20,9 +21,9 @@ export default function App() {
 
   // load words (15 max)
   useEffect(() => {
-    fetch("http://localhost:8080/api/words")
+    fetch(`https://${BASE_URL}/api/words`)
       .then(res => res.json())
-      .then(data => setWords(data.slice(0, 15)))
+      .then(data => setWords(data.slice(0, 5)))
       .catch(err => console.error(err));
   }, []);
 
@@ -30,7 +31,7 @@ export default function App() {
   useEffect(() => {
     if (!roomId) return;
 
-    const socket = new WebSocket("ws://localhost:8081");
+    const socket = new WebSocket(`wss://${BASE_URL}/ws`);
     socketRef.current = socket;
 
     socket.onopen = () => {
