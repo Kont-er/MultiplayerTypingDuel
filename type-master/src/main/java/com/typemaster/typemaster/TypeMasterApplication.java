@@ -13,20 +13,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class TypeMasterApplication {
 
-    // --- PLAYER STATE ---
-    static class Player {
-        WsContext ctx;
-        String name = "Anonymous";
-        boolean ready = false;
-
-        Player(WsContext ctx) {
-            this.ctx = ctx;
-        }
-    }
-
     // --- ROOM STATE ---
     static class RoomState {
-        List<Player> players = Collections.synchronizedList(new ArrayList<>());
+        List<WsContext> players = Collections.synchronizedList(new ArrayList<>());
         List<Word> words = new ArrayList<>();
         boolean started = false;
         boolean finished = false;
@@ -35,7 +24,6 @@ public class TypeMasterApplication {
 
     private static final Map<String, RoomState> rooms = new ConcurrentHashMap<>();
     private static final Map<WsContext, String> playerRoom = new ConcurrentHashMap<>();
-    private static final Map<WsContext, Player> playerMap = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         DatabaseSetup.init();
@@ -48,11 +36,19 @@ public class TypeMasterApplication {
             });
         }).start(port);
 
+        // --- OPTIONAL HTTP ROUTE ---
+        app.get("/api/words", ctx -> {
+            var conn = Database.connect();
+            var words = WordRepository.findAll(conn);
+            ctx.json(words.subList(0, Math.min(words.size(), 15)));
+            conn.close();
+        });
+
+        // --- WEBSOCKET ---
         app.ws("/ws", ws -> {
 
             ws.onConnect(ctx -> {
-                System.out.println("Connected: " + ctx.sessionId());
-                playerMap.put(ctx, new Player(ctx));
+                System.out.println("New Connection: " + ctx.sessionId());
             });
 
             ws.onMessage(ctx -> {
@@ -64,38 +60,12 @@ public class TypeMasterApplication {
                     String roomId = msg.get("room");
 
                     RoomState room = rooms.computeIfAbsent(roomId, k -> new RoomState());
-                    Player player = playerMap.get(ctx);
-
-                    room.players.add(player);
+                    room.players.add(ctx);
                     playerRoom.put(ctx, roomId);
 
-                    broadcastPlayers(roomId);
-                }
+                    broadcast(roomId, "{\"type\":\"PLAYER_JOINED\",\"count\":" + room.players.size() + "}");
 
-                // --- SET NAME ---
-                if ("PLAYER_NAME".equals(type)) {
-                    Player player = playerMap.get(ctx);
-                    player.name = msg.get("name");
-
-                    String roomId = playerRoom.get(ctx);
-                    broadcastPlayers(roomId);
-                }
-
-                // --- READY ---
-                if ("READY".equals(type)) {
-                    Player player = playerMap.get(ctx);
-                    player.ready = true;
-
-                    String roomId = playerRoom.get(ctx);
-                    RoomState room = rooms.get(roomId);
-
-                    broadcastPlayers(roomId);
-
-                    // Check if all ready
-                    if (room.players.size() >= 2 &&
-                        room.players.stream().allMatch(p -> p.ready) &&
-                        !room.started) {
-
+                    if (room.players.size() == 2 && !room.started) {
                         startGame(roomId, room);
                     }
                 }
@@ -111,13 +81,13 @@ public class TypeMasterApplication {
 
                     broadcast(roomId, "{\"type\":\"PROGRESS\",\"index\":" + index + "}");
 
+                    // --- WIN CONDITION ---
                     if (index >= room.words.size()) {
                         room.finished = true;
 
-                        Player winnerPlayer = playerMap.get(ctx);
+                        String winner = "Player " + ctx.sessionId().substring(0, 4);
 
-                        broadcast(roomId,
-                            "{\"type\":\"GAME_OVER\",\"winner\":\"" + winnerPlayer.name + "\"}");
+                        broadcast(roomId, "{\"type\":\"GAME_OVER\",\"winner\":\"" + winner + "\"}");
                     }
                 }
             });
@@ -129,19 +99,15 @@ public class TypeMasterApplication {
                     RoomState room = rooms.get(roomId);
 
                     if (room != null) {
-                        room.players.removeIf(p -> p.ctx == ctx);
+                        room.players.remove(ctx);
 
                         if (room.players.isEmpty()) {
                             rooms.remove(roomId);
-                        } else {
-                            broadcastPlayers(roomId);
                         }
                     }
                 }
 
                 playerRoom.remove(ctx);
-                playerMap.remove(ctx);
-
                 System.out.println("Disconnected: " + ctx.sessionId());
             });
         });
@@ -156,13 +122,14 @@ public class TypeMasterApplication {
 
             Collections.shuffle(allWords);
 
-            room.words = new ArrayList<>(
-                allWords.subList(0, Math.min(15, allWords.size()))
-            );
+            // Take 15 words
+            room.words = allWords.subList(0, Math.min(15, allWords.size()));
 
+            // Send words
             String wordsJson = buildWordsJson(room.words);
             broadcast(roomId, "{\"type\":\"WORDS\",\"words\":" + wordsJson + "}");
 
+            // Countdown
             new Thread(() -> {
                 try {
                     for (int i = 3; i >= 1; i--) {
@@ -173,8 +140,7 @@ public class TypeMasterApplication {
                     room.started = true;
                     room.startTime = System.currentTimeMillis();
 
-                    broadcast(roomId,
-                        "{\"type\":\"START\",\"startTime\":" + room.startTime + "}");
+                    broadcast(roomId, "{\"type\":\"START\",\"startTime\":" + room.startTime + "}");
 
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -186,38 +152,14 @@ public class TypeMasterApplication {
         }
     }
 
-    // --- BROADCAST PLAYERS ---
-    private static void broadcastPlayers(String roomId) {
-        RoomState room = rooms.get(roomId);
-        if (room == null) return;
-
-        StringBuilder sb = new StringBuilder("{\"type\":\"PLAYERS\",\"players\":[");
-
-        for (int i = 0; i < room.players.size(); i++) {
-            Player p = room.players.get(i);
-
-            sb.append("{\"name\":\"")
-              .append(p.name)
-              .append("\",\"ready\":")
-              .append(p.ready)
-              .append("}");
-
-            if (i < room.players.size() - 1) sb.append(",");
-        }
-
-        sb.append("]}");
-
-        broadcast(roomId, sb.toString());
-    }
-
     // --- BROADCAST ---
     private static void broadcast(String roomId, String message) {
         RoomState room = rooms.get(roomId);
         if (room == null) return;
 
-        for (Player p : room.players) {
-            if (p.ctx.session.isOpen()) {
-                p.ctx.send(message);
+        for (WsContext player : room.players) {
+            if (player.session.isOpen()) {
+                player.send(message);
             }
         }
     }
@@ -242,7 +184,7 @@ public class TypeMasterApplication {
         return sb.toString();
     }
 
-    // --- SIMPLE PARSER ---
+    // --- SIMPLE JSON PARSER ---
     private static Map<String, String> simpleParse(String json) {
         Map<String, String> map = new HashMap<>();
 
