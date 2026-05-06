@@ -1,92 +1,98 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export default function App() {
-  // --- GAME ---
+  // ===== GAME STATE =====
   const [words, setWords] = useState([]);
   const [index, setIndex] = useState(0);
   const [input, setInput] = useState("");
   const [score, setScore] = useState(0);
 
-  // --- PLAYER ---
+  // ===== PLAYER =====
   const [nameInput, setNameInput] = useState("");
   const [name, setName] = useState(null);
+
+  // ===== MULTIPLAYER =====
   const [players, setPlayers] = useState([]);
   const [isReady, setIsReady] = useState(false);
 
-  // --- GAME STATE ---
-  const [phase, setPhase] = useState("NAME"); 
-  // NAME | LOBBY | COUNTDOWN | GAME | END
-
   const [countdown, setCountdown] = useState(null);
   const [gameStarted, setGameStarted] = useState(false);
-  const [startTime, setStartTime] = useState(null);
-
   const [gameFinished, setGameFinished] = useState(false);
   const [winner, setWinner] = useState(null);
 
   const [wpm, setWpm] = useState(0);
+  const [startTime, setStartTime] = useState(null);
 
   const socketRef = useRef(null);
+
+  const API_URL = "https://type-masters-production.up.railway.app";
   const WS_URL = "wss://type-masters-production.up.railway.app";
 
+  // ===== ROOM =====
   const roomId = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("room") || null;
   }, []);
 
-  // --- WS CONNECTION ---
+  const isMultiplayer = !!roomId;
+
+  // ===== LOAD WORDS =====
   useEffect(() => {
-    if (!roomId) return;
+    fetch(`${API_URL}/api/words`)
+      .then(res => res.json())
+      .then(data => {
+        setWords(data.slice(0, 10));
+      })
+      .catch(() => {
+        setWords([{ text: "backend error", difficulty: "N/A" }]);
+      });
+  }, []);
+
+  // ===== WEBSOCKET (ONLY IF MULTIPLAYER) =====
+  useEffect(() => {
+    if (!isMultiplayer) return;
 
     const socket = new WebSocket(`${WS_URL}/ws`);
     socketRef.current = socket;
 
     socket.onopen = () => {
-      socket.send(JSON.stringify({ type: "JOIN", room: roomId }));
+      socket.send(JSON.stringify({
+        type: "JOIN",
+        room: roomId
+      }));
     };
 
     socket.onmessage = (event) => {
       const msg = JSON.parse(event.data);
 
-      switch (msg.type) {
-        case "PLAYERS":
-          setPlayers(msg.players);
-          setPhase("LOBBY");
-          break;
+      if (msg.type === "PLAYERS") {
+        setPlayers(msg.players);
+      }
 
-        case "WORDS":
-          setWords(msg.words);
-          break;
+      if (msg.type === "COUNTDOWN") {
+        setCountdown(msg.value);
+      }
 
-        case "COUNTDOWN":
-          setPhase("COUNTDOWN");
-          setCountdown(msg.value);
-          break;
+      if (msg.type === "START") {
+        setCountdown(null);
+        setGameStarted(true);
+        setStartTime(msg.startTime);
+      }
 
-        case "START":
-          setCountdown(null);
-          setGameStarted(true);
-          setPhase("GAME");
-          setStartTime(msg.startTime);
-          break;
-
-        case "GAME_OVER":
-          setPhase("END");
-          setGameFinished(true);
-          setWinner(msg.winner);
-          break;
+      if (msg.type === "GAME_OVER") {
+        setGameFinished(true);
+        setWinner(msg.winner);
       }
     };
 
     return () => socket.close();
-  }, [roomId]);
+  }, [isMultiplayer, roomId]);
 
-  // --- NAME SUBMIT (FIXED) ---
+  // ===== NAME JOIN =====
   const submitName = () => {
     if (!nameInput.trim()) return;
 
     setName(nameInput);
-    setPhase("LOBBY");
 
     socketRef.current?.send(JSON.stringify({
       type: "PLAYER_NAME",
@@ -94,7 +100,7 @@ export default function App() {
     }));
   };
 
-  // --- READY ---
+  // ===== READY =====
   const handleReady = () => {
     setIsReady(true);
 
@@ -103,31 +109,35 @@ export default function App() {
     }));
   };
 
-  // --- TYPING ---
+  // ===== TYPING LOGIC =====
   const handleChange = (e) => {
     const value = e.target.value;
     setInput(value);
 
-    if (!gameStarted || gameFinished) return;
+    if (!words.length || gameFinished) return;
 
     const currentWord = words[index];
-    if (!currentWord) return;
 
     if (value.trim().toLowerCase() === currentWord.text.toLowerCase()) {
-      const nextIndex = index + 1;
+      const next = index + 1;
 
-      setIndex(nextIndex);
-      setScore(prev => prev + 1);
+      setScore(s => s + 1);
+      setIndex(next);
       setInput("");
 
-      socketRef.current?.send(JSON.stringify({
+      socketRef.current?.send?.(JSON.stringify({
         type: "PROGRESS",
-        index: nextIndex
+        index: next
       }));
+
+      if (next >= words.length) {
+        setGameFinished(true);
+        setWinner(name || "You");
+      }
     }
   };
 
-  // --- WPM ---
+  // ===== WPM =====
   useEffect(() => {
     if (!gameStarted || !startTime) return;
 
@@ -148,7 +158,25 @@ export default function App() {
 
   const currentWord = words[index];
 
-  // ================= UI =================
+  // ===== INVITE LINK =====
+  const createInvite = () => {
+    const room = Math.random().toString(36).substring(2, 8);
+    const link = `${window.location.origin}?room=${room}`;
+    navigator.clipboard.writeText(link);
+    alert("Invite copied:\n" + link);
+  };
+
+  const resetGame = () => {
+    setIndex(0);
+    setScore(0);
+    setInput("");
+    setGameFinished(false);
+    setCountdown(null);
+    setGameStarted(false);
+    setWinner(null);
+  };
+
+  // ===== UI =====
   return (
     <div style={{
       width: "100vw",
@@ -163,8 +191,8 @@ export default function App() {
 
       <h1 style={{ color: "#facc15" }}>Typing Duel</h1>
 
-      {/* ================= NAME SCREEN ================= */}
-      {phase === "NAME" && (
+      {/* NAME */}
+      {!name && (
         <div>
           <input
             value={nameInput}
@@ -178,50 +206,39 @@ export default function App() {
         </div>
       )}
 
-      {/* ================= LOBBY ================= */}
-      {phase === "LOBBY" && (
-        <>
-          <h3>Lobby</h3>
+      {/* LOBBY (ONLY MULTIPLAYER) */}
+      {isMultiplayer && name && (
+        <div style={{ marginTop: 20 }}>
+          <button onClick={createInvite}>Invite Friend</button>
 
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {players.map((p, i) => (
-                <tr key={i}>
-                  <td>{p.name}</td>
-                  <td>{p.ready ? "✅ Ready" : "⏳ Waiting"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <h3>Players</h3>
+          <ul>
+            {players.map((p, i) => (
+              <li key={i}>
+                {p.name} {p.ready ? "✅" : "⏳"}
+              </li>
+            ))}
+          </ul>
 
           {!isReady && (
-            <button onClick={handleReady} style={{ marginTop: 20 }}>
-              Ready
-            </button>
+            <button onClick={handleReady}>Ready</button>
           )}
-        </>
+        </div>
       )}
 
-      {/* ================= COUNTDOWN ================= */}
-      {phase === "COUNTDOWN" && (
+      {/* COUNTDOWN */}
+      {countdown !== null && (
         <h1 style={{ fontSize: 80, textAlign: "center" }}>
           {countdown}
         </h1>
       )}
 
-      {/* ================= GAME ================= */}
-      {phase === "GAME" && currentWord && (
+      {/* GAME */}
+      {gameStarted && !gameFinished && currentWord && (
         <>
           <h2>Score: {score} | WPM: {wpm}</h2>
 
-          <h1 style={{ color: "#38bdf8", fontSize: 48 }}>
+          <h1 style={{ color: "#38bdf8" }}>
             {currentWord.text}
           </h1>
 
@@ -241,9 +258,19 @@ export default function App() {
         </>
       )}
 
-      {/* ================= END ================= */}
-      {phase === "END" && (
-        <h1>🏆 Winner: {winner}</h1>
+      {/* SINGLE PLAYER MODE (auto start) */}
+      {!isMultiplayer && name && !gameStarted && (
+        <button onClick={() => setGameStarted(true)}>
+          Start Game
+        </button>
+      )}
+
+      {/* END */}
+      {gameFinished && (
+        <div>
+          <h1>🏆 Winner: {winner}</h1>
+          <button onClick={resetGame}>Restart</button>
+        </div>
       )}
     </div>
   );
