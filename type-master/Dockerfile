@@ -3,9 +3,9 @@ FROM maven:3.8.5-openjdk-17 AS build
 COPY . .
 RUN mvn clean package -DskipTests
 
-# Run stage
-FROM openjdk:17-jdk-slim
-COPY --from=build /target/*.jar app.jar
+# Run stage (Using Temurin instead of the deprecated openjdk image)
+FROM eclipse-temurin:17-jdk-jammy
+# Copy the fat jar produced by the assembly plugin
+COPY --from=build /target/*-jar-with-dependencies.jar app.jar
 EXPOSE 8080
-# Railway provides the PORT environment variable
-ENTRYPOINT ["java", "-Xmx512m", "-jar", "/app.jar"]
+ENTRYPOINT ["java", "-jar", "/app.jar"]
