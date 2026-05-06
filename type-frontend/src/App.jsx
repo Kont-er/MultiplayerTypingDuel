@@ -1,18 +1,21 @@
-
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export default function App() {
+  // --- GAME ---
   const [words, setWords] = useState([]);
   const [index, setIndex] = useState(0);
   const [input, setInput] = useState("");
   const [score, setScore] = useState(0);
 
+  // --- PLAYER ---
+  const [nameInput, setNameInput] = useState("");
+  const [name, setName] = useState(null);
   const [players, setPlayers] = useState([]);
-  const [name, setName] = useState("");
   const [isReady, setIsReady] = useState(false);
 
-  const [isConnected, setIsConnected] = useState(false);
-  const [opponentProgress, setOpponentProgress] = useState(0);
+  // --- GAME STATE ---
+  const [phase, setPhase] = useState("NAME"); 
+  // NAME | LOBBY | COUNTDOWN | GAME | END
 
   const [countdown, setCountdown] = useState(null);
   const [gameStarted, setGameStarted] = useState(false);
@@ -31,7 +34,7 @@ export default function App() {
     return params.get("room") || null;
   }, []);
 
-  // --- WS ---
+  // --- WS CONNECTION ---
   useEffect(() => {
     if (!roomId) return;
 
@@ -48,7 +51,7 @@ export default function App() {
       switch (msg.type) {
         case "PLAYERS":
           setPlayers(msg.players);
-          setIsConnected(msg.players.length >= 2);
+          setPhase("LOBBY");
           break;
 
         case "WORDS":
@@ -56,20 +59,19 @@ export default function App() {
           break;
 
         case "COUNTDOWN":
+          setPhase("COUNTDOWN");
           setCountdown(msg.value);
           break;
 
         case "START":
           setCountdown(null);
           setGameStarted(true);
+          setPhase("GAME");
           setStartTime(msg.startTime);
           break;
 
-        case "PROGRESS":
-          setOpponentProgress(msg.index);
-          break;
-
         case "GAME_OVER":
+          setPhase("END");
           setGameFinished(true);
           setWinner(msg.winner);
           break;
@@ -79,13 +81,16 @@ export default function App() {
     return () => socket.close();
   }, [roomId]);
 
-  // --- SEND NAME ---
+  // --- NAME SUBMIT (FIXED) ---
   const submitName = () => {
-    if (!name.trim()) return;
+    if (!nameInput.trim()) return;
+
+    setName(nameInput);
+    setPhase("LOBBY");
 
     socketRef.current?.send(JSON.stringify({
       type: "PLAYER_NAME",
-      name
+      name: nameInput
     }));
   };
 
@@ -143,6 +148,7 @@ export default function App() {
 
   const currentWord = words[index];
 
+  // ================= UI =================
   return (
     <div style={{
       width: "100vw",
@@ -157,53 +163,63 @@ export default function App() {
 
       <h1 style={{ color: "#facc15" }}>Typing Duel</h1>
 
-      {/* NAME INPUT */}
-      {!name && (
+      {/* ================= NAME SCREEN ================= */}
+      {phase === "NAME" && (
         <div>
           <input
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
             placeholder="Enter your name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            style={{ padding: 10, fontSize: 16 }}
           />
-          <button onClick={submitName}>Join</button>
+          <button onClick={submitName} style={{ marginLeft: 10 }}>
+            Join
+          </button>
         </div>
       )}
 
-      {/* PLAYER TABLE */}
-      <table style={{ marginTop: 20, borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {players.map((p, i) => (
-            <tr key={i}>
-              <td>{p.name}</td>
-              <td>{p.ready ? "✅ Ready" : "⏳ Waiting"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* ================= LOBBY ================= */}
+      {phase === "LOBBY" && (
+        <>
+          <h3>Lobby</h3>
 
-      {/* READY BUTTON */}
-      {name && !isReady && (
-        <button onClick={handleReady} style={{ marginTop: 20 }}>
-          Ready
-        </button>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {players.map((p, i) => (
+                <tr key={i}>
+                  <td>{p.name}</td>
+                  <td>{p.ready ? "✅ Ready" : "⏳ Waiting"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {!isReady && (
+            <button onClick={handleReady} style={{ marginTop: 20 }}>
+              Ready
+            </button>
+          )}
+        </>
       )}
 
-      {/* COUNTDOWN */}
-      {countdown !== null && (
-        <h1 style={{ fontSize: 80, textAlign: "center" }}>{countdown}</h1>
+      {/* ================= COUNTDOWN ================= */}
+      {phase === "COUNTDOWN" && (
+        <h1 style={{ fontSize: 80, textAlign: "center" }}>
+          {countdown}
+        </h1>
       )}
 
-      {/* GAME */}
-      {gameStarted && !gameFinished && currentWord && (
+      {/* ================= GAME ================= */}
+      {phase === "GAME" && currentWord && (
         <>
           <h2>Score: {score} | WPM: {wpm}</h2>
-          <h3>{index} / {words.length}</h3>
 
           <h1 style={{ color: "#38bdf8", fontSize: 48 }}>
             {currentWord.text}
@@ -218,17 +234,17 @@ export default function App() {
               padding: 10,
               width: 400,
               background: "#1e293b",
-              color: "white"
+              color: "white",
+              border: "none"
             }}
           />
         </>
       )}
 
-      {/* GAME OVER */}
-      {gameFinished && (
+      {/* ================= END ================= */}
+      {phase === "END" && (
         <h1>🏆 Winner: {winner}</h1>
       )}
     </div>
   );
 }
-
