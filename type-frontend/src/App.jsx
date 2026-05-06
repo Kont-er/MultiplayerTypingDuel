@@ -26,11 +26,25 @@ export default function App() {
 
   // load words
   useEffect(() => {
+    console.log("Attempting to fetch from:", `${API_URL}/api/words`);
+    
     fetch(`${API_URL}/api/words`)
-      .then(res => res.json())
-      .then(data => setWords(data.slice(0, 5)))
-      .catch(err => console.error("Fetch error:", err));
-  }, [API_URL]);
+      .then(res => {
+        if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        if (data.length === 0) {
+           console.warn("Backend returned 0 words!");
+        }
+        setWords(data.slice(0, 5));
+      })
+      .catch(err => {
+        console.error("Fetch error:", err);
+        // Show the error on screen so you aren't stuck on "Loading..."
+        setWords([{ text: "Error: Could not connect to backend", difficulty: "N/A" }]);
+      });
+}, [API_URL]);
 
   // WebSocket setup
   useEffect(() => {
