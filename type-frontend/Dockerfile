@@ -1,5 +1,6 @@
 # Step 1: Build the React app
-FROM node:18-alpine AS build
+# Use Node 22 to satisfy Vite's requirements
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
