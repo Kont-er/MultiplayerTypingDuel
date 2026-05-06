@@ -15,8 +15,8 @@ export default function App() {
   // --- CONFIGURATION ---
   // Railway uses environment variables starting with VITE_
   // If they aren't found, we default to your local backend for development
-  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
-  const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8080";
+const API_URL = "https://type-masters-production.up.railway.app";
+const WS_URL = "wss://type-masters-production.up.railway.app";
 
   // room from URL
   const roomId = useMemo(() => {
