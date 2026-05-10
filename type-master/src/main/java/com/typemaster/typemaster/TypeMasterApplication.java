@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class TypeMasterApplication {
 
+    //hmm
     // --- ROOM STATE ---
     static class RoomState {
         List<WsContext> players = Collections.synchronizedList(new ArrayList<>());
