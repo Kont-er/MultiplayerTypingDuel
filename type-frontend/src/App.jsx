@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export default function App() {
@@ -25,16 +24,14 @@ export default function App() {
   const [wpm, setWpm] = useState(0);
 
   const socketRef = useRef(null);
-
   const WS_URL = "wss://type-masters-production.up.railway.app";
 
-  // room from URL
   const roomId = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("room") || null;
   }, []);
 
-  // --- WEBSOCKET SETUP ---
+  // --- WEBSOCKET ---
   useEffect(() => {
     if (!roomId) return;
 
@@ -42,10 +39,7 @@ export default function App() {
     socketRef.current = socket;
 
     socket.onopen = () => {
-      socket.send(JSON.stringify({
-        type: "JOIN",
-        room: roomId
-      }));
+      socket.send(JSON.stringify({ type: "JOIN", room: roomId }));
     };
 
     socket.onmessage = (event) => {
@@ -55,43 +49,33 @@ export default function App() {
         case "PLAYER_JOINED":
           if (msg.count >= 2) setIsConnected(true);
           break;
-
         case "WORDS":
           setWords(msg.words);
           break;
-
         case "COUNTDOWN":
           setCountdown(msg.value);
           break;
-
         case "START":
           setCountdown(null);
           setGameStarted(true);
           setStartTime(msg.startTime);
           break;
-
         case "PROGRESS":
           setOpponentProgress(msg.index);
           break;
-
         case "GAME_OVER":
           setGameFinished(true);
           setWinner(msg.winner);
           break;
-
-        default:
-          break;
       }
     };
 
-    socket.onclose = () => {
-      setIsConnected(false);
-    };
+    socket.onclose = () => setIsConnected(false);
 
     return () => socket.close();
   }, [roomId]);
 
-  // --- TYPING HANDLER ---
+  // --- INPUT HANDLER ---
   const handleChange = (e) => {
     const value = e.target.value;
     setInput(value);
@@ -105,33 +89,28 @@ export default function App() {
       const nextIndex = index + 1;
 
       setIndex(nextIndex);
-      setScore(prev => prev + 1);
+      setScore((s) => s + 1);
       setInput("");
 
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({
-          type: "PROGRESS",
-          index: nextIndex
-        }));
-      }
+      socketRef.current?.send(
+        JSON.stringify({ type: "PROGRESS", index: nextIndex })
+      );
     }
   };
 
-  // --- WPM CALCULATION ---
+  // --- WPM ---
   useEffect(() => {
     if (!gameStarted || !startTime) return;
 
     const interval = setInterval(() => {
-      const now = Date.now();
-      const minutes = (now - startTime) / 60000;
+      const minutes = (Date.now() - startTime) / 60000;
 
       if (minutes > 0) {
         const charsTyped = words
           .slice(0, index)
           .reduce((acc, w) => acc + w.text.length, 0);
 
-        const calculatedWPM = Math.round((charsTyped / 5) / minutes);
-        setWpm(calculatedWPM);
+        setWpm(Math.round((charsTyped / 5) / minutes));
       }
     }, 1000);
 
@@ -143,7 +122,8 @@ export default function App() {
     const room = Math.random().toString(36).substring(2, 8);
     const link = `${window.location.origin}?room=${room}`;
 
-    navigator.clipboard.writeText(link)
+    navigator.clipboard
+      .writeText(link)
       .then(() => alert("Invite copied:\n" + link))
       .catch(() => alert("Failed to copy link"));
   };
@@ -164,89 +144,208 @@ export default function App() {
   const currentWord = words[index];
 
   return (
-    <div style={{
-      padding: 20,
-      fontFamily: "Arial",
-      background: "#0f172a",
-      color: "#e2e8f0",
-      minHeight: "100vh"
-    }}>
-      {/* HEADER */}
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <h1>Typing Duel</h1>
+    <div style={styles.page}>
+      <div style={styles.container}>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 12,
-            height: 12,
-            borderRadius: "50%",
-            backgroundColor: isConnected ? "#22c55e" : "#ef4444"
-          }} />
-          <span>{isConnected ? "Opponent Connected" : "Waiting..."}</span>
+        {/* HEADER */}
+        <div style={styles.header}>
+          <h1 style={styles.title}>⚡ Typing Duel</h1>
+
+          <div style={styles.status}>
+            <div
+              style={{
+                ...styles.dot,
+                backgroundColor: isConnected ? "#22c55e" : "#ef4444"
+              }}
+            />
+            <span>
+              {isConnected ? "Opponent Connected" : "Waiting..."}
+            </span>
+          </div>
         </div>
+
+        <button onClick={createInvite} style={styles.button}>
+          Invite Friend
+        </button>
+
+        {roomId && <p style={styles.room}>Room: <b>{roomId}</b></p>}
+
+        {/* COUNTDOWN */}
+        {countdown !== null && (
+          <div style={styles.centerBlock}>
+            <h1 style={styles.countdown}>{countdown}</h1>
+          </div>
+        )}
+
+        {/* GAME OVER */}
+        {gameFinished && (
+          <div style={styles.card}>
+            <h2>🎉 Game Over</h2>
+            <p>Winner: <b>{winner}</b></p>
+            <button onClick={resetGame} style={styles.button}>
+              Play Again
+            </button>
+          </div>
+        )}
+
+        {/* GAME */}
+        {!gameFinished && gameStarted && currentWord && (
+          <div style={styles.gameCard}>
+            <div style={styles.statsRow}>
+              <div>Score: <b>{score}</b></div>
+              <div>WPM: <b>{wpm}</b></div>
+            </div>
+
+            <div style={styles.progress}>
+              You: {index} / {words.length} <br />
+              Opponent: {opponentProgress}
+            </div>
+
+            <div style={styles.wordBox}>
+              {currentWord.text}
+            </div>
+
+            <input
+              value={input}
+              onChange={handleChange}
+              autoFocus
+              disabled={!gameStarted || gameFinished}
+              style={styles.input}
+            />
+          </div>
+        )}
+
+        {/* WAITING */}
+        {!gameStarted && countdown === null && !gameFinished && (
+          <p style={styles.waiting}>Waiting for players...</p>
+        )}
       </div>
-
-      <button onClick={createInvite}>Invite Friend</button>
-      {roomId && <p>Room: <b>{roomId}</b></p>}
-
-      {/* COUNTDOWN */}
-      {countdown !== null && (
-        <h1 style={{ fontSize: 60, textAlign: "center" }}>
-          {countdown}
-        </h1>
-      )}
-
-      {/* GAME OVER */}
-      {gameFinished && (
-        <div style={{
-          padding: 20,
-          background: "#020617",
-          marginTop: 20
-        }}>
-          🎉 Game Over! <br />
-          Winner: {winner} <br />
-          <button onClick={resetGame}>Play Again</button>
-        </div>
-      )}
-
-      {/* GAME */}
-      {!gameFinished && gameStarted && currentWord && (
-        <>
-          <h3>Score: {score}</h3>
-          <h3>WPM: {wpm}</h3>
-
-          <p>Your Progress: {index} / {words.length}</p>
-          <p>Opponent Progress: {opponentProgress}</p>
-          <p>Difficulty: {currentWord.difficulty}</p>
-
-          <h1 style={{ color: "#38bdf8" }}>
-            {currentWord.text}
-          </h1>
-
-          <input
-            value={input}
-            onChange={handleChange}
-            autoFocus
-            disabled={!gameStarted || gameFinished}
-            style={{
-              fontSize: 20,
-              padding: 10,
-              width: 300,
-              background: "#1e293b",
-              color: "#e2e8f0",
-              border: "1px solid #334155"
-            }}
-          />
-        </>
-      )}
-
-      {/* WAITING STATE */}
-      {!gameStarted && countdown === null && !gameFinished && (
-        <p style={{ marginTop: 20 }}>
-          Waiting for players...
-        </p>
-      )}
     </div>
   );
 }
 
+/* ---------------- STYLES ---------------- */
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    background: "radial-gradient(circle at top, #1e293b, #0f172a)",
+    fontFamily: "Arial",
+    color: "#e2e8f0",
+    padding: 20
+  },
+
+  container: {
+    width: "100%",
+    maxWidth: 700,
+    display: "flex",
+    flexDirection: "column",
+    gap: 20
+  },
+
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center"
+  },
+
+  title: {
+    fontSize: 28,
+    margin: 0,
+    color: "#38bdf8"
+  },
+
+  status: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    fontSize: 14,
+    color: "#cbd5e1"
+  },
+
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: "50%"
+  },
+
+  button: {
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "none",
+    cursor: "pointer",
+    background: "#6366f1",
+    color: "white",
+    fontWeight: "bold"
+  },
+
+  room: {
+    color: "#94a3b8"
+  },
+
+  centerBlock: {
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40
+  },
+
+  countdown: {
+    fontSize: 72,
+    color: "#38bdf8"
+  },
+
+  card: {
+    background: "#111827",
+    padding: 20,
+    borderRadius: 16,
+    textAlign: "center",
+    border: "1px solid #1f2937"
+  },
+
+  gameCard: {
+    background: "#111827",
+    padding: 24,
+    borderRadius: 16,
+    border: "1px solid #1f2937",
+    display: "flex",
+    flexDirection: "column",
+    gap: 16
+  },
+
+  statsRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    color: "#cbd5e1"
+  },
+
+  progress: {
+    fontSize: 14,
+    color: "#94a3b8"
+  },
+
+  wordBox: {
+    fontSize: 36,
+    textAlign: "center",
+    color: "#38bdf8",
+    fontWeight: "bold"
+  },
+
+  input: {
+    fontSize: 18,
+    padding: 12,
+    borderRadius: 10,
+    border: "1px solid #334155",
+    background: "#0b1220",
+    color: "#e2e8f0",
+    outline: "none"
+  },
+
+  waiting: {
+    textAlign: "center",
+    color: "#94a3b8"
+  }
+};
