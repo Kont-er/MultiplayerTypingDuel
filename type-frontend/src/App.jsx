@@ -82,41 +82,53 @@ export default function App() {
   // =========================================================
 
   const startSingleplayer = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/words`);
-      const data = await res.json();
+  try {
+    setMode("single");
+    setJoined(true);
+    setGameFinished(false);
+    setGameStarted(false);
+    setIndex(0);
+    setInput("");
+    setCountdown(null);
 
-      setWords(data);
-      setTotalWords(data.length);
+    const res = await fetch(`${API_URL}/api/words`);
+    const data = await res.json();
 
-      setPlayers([
-        {
-          username: "You",
-          progress: 0,
-        },
-      ]);
-
-      setCountdown(3);
-
-      let count = 3;
-
-      const interval = setInterval(() => {
-        count--;
-
-        if (count === 0) {
-          clearInterval(interval);
-          setCountdown(null);
-          setGameStarted(true);
-          return;
-        }
-
-        setCountdown(count);
-      }, 1000);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to start singleplayer game");
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error("No words received from server");
     }
-  };
+
+    setWords(data);
+    setTotalWords(data.length);
+
+    setPlayers([
+      {
+        username: "You",
+        progress: 0,
+      },
+    ]);
+
+    // start countdown AFTER words are ready
+    let count = 3;
+    setCountdown(count);
+
+    const interval = setInterval(() => {
+      count -= 1;
+
+      if (count <= 0) {
+        clearInterval(interval);
+        setCountdown(null);
+        setGameStarted(true);   // 🔥 GAME STARTS HERE
+        return;
+      }
+
+      setCountdown(count);
+    }, 1000);
+  } catch (err) {
+    console.error(err);
+    alert("Failed to start singleplayer game");
+  }
+};
 
   // =========================================================
   // CONNECT SOCKET
@@ -323,11 +335,7 @@ export default function App() {
 
           <button
             style={styles.button}
-            onClick={() => {
-              setMode("single");
-              setJoined(true);
-              startSingleplayer();
-            }}
+            onClick={startSingleplayer}
           >
             Singleplayer
           </button>
