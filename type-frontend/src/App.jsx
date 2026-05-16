@@ -109,26 +109,41 @@ export default function App() {
     ]);
 
     // start countdown AFTER words are ready
+      setWords(data);
+  setTotalWords(data.length);
+  setIndex(0);
+  setInput("");
+
+  setPlayers([
+    { username: "You", progress: 0 }
+  ]);
+
+  setGameFinished(false);
+  setGameStarted(false);
+
+  // IMPORTANT: defer countdown ONE tick
+  setTimeout(() => {
     let count = 3;
     setCountdown(count);
 
     const interval = setInterval(() => {
-      count -= 1;
+      count--;
 
       if (count <= 0) {
         clearInterval(interval);
         setCountdown(null);
-        setGameStarted(true);   // 🔥 GAME STARTS HERE
+        setGameStarted(true);
         return;
       }
 
       setCountdown(count);
     }, 1000);
-  } catch (err) {
-    console.error(err);
-    alert("Failed to start singleplayer game");
-  }
-};
+  }, 50);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to start singleplayer game");
+    }
+  };
 
   // =========================================================
   // CONNECT SOCKET
