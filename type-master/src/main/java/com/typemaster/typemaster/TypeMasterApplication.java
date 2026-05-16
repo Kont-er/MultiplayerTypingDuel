@@ -1,19 +1,18 @@
 package com.typemaster.typemaster;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.javalin.Javalin;
 import io.javalin.websocket.WsContext;
 
-import com.typemaster.typemaster.database.DatabaseSetup;
-import com.typemaster.typemaster.database.Database;
-import com.typemaster.typemaster.repository.WordRepository;
-import com.typemaster.typemaster.model.Word;
-
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 
 public class TypeMasterApplication {
 
-    // ---------------- PLAYER ----------------
+    // =========================================================
+    // MODELS
+    // =========================================================
+
     static class Player {
         WsContext ctx;
         String username;
@@ -21,55 +20,88 @@ public class TypeMasterApplication {
         boolean ready = false;
     }
 
-    // ---------------- ROOM ----------------
     static class RoomState {
         List<Player> players = Collections.synchronizedList(new ArrayList<>());
-        List<Word> words = new ArrayList<>();
+        List<Map<String, String>> words = new ArrayList<>();
         boolean started = false;
         boolean finished = false;
         long startTime = 0;
     }
 
-    private static final Map<String, RoomState> rooms = new ConcurrentHashMap<>();
-    private static final Map<WsContext, String> playerRoom = new ConcurrentHashMap<>();
+    // =========================================================
+    // GLOBAL STATE
+    // =========================================================
+
+    static final Map<String, RoomState> rooms = new ConcurrentHashMap<>();
+    static final Map<WsContext, String> playerRoom = new ConcurrentHashMap<>();
+
+    static final ObjectMapper mapper = new ObjectMapper();
+    static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
+
+    // =========================================================
+    // MAIN
+    // =========================================================
 
     public static void main(String[] args) {
-
-        DatabaseSetup.init();
 
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
 
         Javalin app = Javalin.create(config ->
-            config.bundledPlugins.enableCors(cors -> cors.addRule(it -> it.anyHost()))
+                config.bundledPlugins.enableCors(cors -> cors.addRule(it -> it.anyHost()))
         ).start(port);
 
-        // ---------------- WORD API ----------------
-        app.get("/api/words", ctx -> {
-            var conn = Database.connect();
-            var words = WordRepository.findAll(conn);
-            ctx.json(words.subList(0, Math.min(words.size(), 15)));
-            conn.close();
+        // =====================================================
+        // CREATE ROOM (INVITE LINK SYSTEM)
+        // =====================================================
+
+        app.post("/api/create-room", ctx -> {
+            String roomId = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+
+            rooms.put(roomId, new RoomState());
+
+            ctx.json(Map.of("roomId", roomId));
         });
 
-        // ---------------- WEBSOCKET ----------------
+        // =====================================================
+        // WEBSOCKET
+        // =====================================================
+
         app.ws("/ws", ws -> {
 
             ws.onConnect(ctx ->
-                System.out.println("Connected: " + ctx.sessionId())
+                    System.out.println("Connected: " + ctx.sessionId())
             );
 
             ws.onMessage(ctx -> {
 
-                Map<String, String> msg = simpleParse(ctx.message());
-                String type = msg.get("type");
+                Map<String, Object> msg;
 
-                // ================= JOIN =================
+                try {
+                    msg = mapper.readValue(ctx.message(), Map.class);
+                } catch (Exception e) {
+                    sendError(ctx, "Invalid JSON");
+                    return;
+                }
+
+                String type = (String) msg.get("type");
+
+                // =================================================
+                // JOIN ROOM
+                // =================================================
+
                 if ("JOIN".equals(type)) {
 
-                    String roomId = msg.get("room");
-                    String username = msg.get("username");
+                    String roomId = (String) msg.get("room");
+                    String username = ((String) msg.get("username")).trim();
 
-                    RoomState room = rooms.computeIfAbsent(roomId, k -> new RoomState());
+                    if (username.length() > 20) username = username.substring(0, 20);
+
+                    RoomState room = rooms.get(roomId);
+
+                    if (room == null) {
+                        sendError(ctx, "Room not found");
+                        return;
+                    }
 
                     Player player = new Player();
                     player.ctx = ctx;
@@ -78,16 +110,18 @@ public class TypeMasterApplication {
                     room.players.add(player);
                     playerRoom.put(ctx, roomId);
 
-                    broadcast(roomId,
-                        "{\"type\":\"PLAYER_JOINED\",\"count\":" + room.players.size() + "}"
-                    );
+                    broadcastLobby(roomId);
                 }
 
-                // ================= READY =================
+                // =================================================
+                // READY
+                // =================================================
+
                 if ("READY".equals(type)) {
 
                     String roomId = playerRoom.get(ctx);
                     RoomState room = rooms.get(roomId);
+
                     if (room == null) return;
 
                     Player player = findPlayer(room, ctx);
@@ -95,17 +129,17 @@ public class TypeMasterApplication {
 
                     player.ready = true;
 
-                    broadcast(roomId,
-                        "{\"type\":\"PLAYER_READY\",\"username\":\"" +
-                        player.username + "\"}"
-                    );
+                    broadcastLobby(roomId);
 
                     if (allReady(room) && !room.started) {
                         startGame(roomId, room);
                     }
                 }
 
-                // ================= PROGRESS =================
+                // =================================================
+                // PROGRESS (ANTI-CHEAT BASIC VALIDATION)
+                // =================================================
+
                 if ("PROGRESS".equals(type)) {
 
                     String roomId = playerRoom.get(ctx);
@@ -113,28 +147,37 @@ public class TypeMasterApplication {
 
                     if (room == null || room.finished || !room.started) return;
 
-                    int index = Integer.parseInt(msg.get("index"));
-
                     Player player = findPlayer(room, ctx);
                     if (player == null) return;
 
-                    player.progress = index;
+                    int index = ((Number) msg.get("index")).intValue();
 
-                    // ---------------- WIN CONDITION ----------------
-                    if (index >= room.words.size() && !room.finished) {
-                        room.finished = true;
-
-                        broadcast(roomId,
-                            "{\"type\":\"GAME_OVER\",\"winner\":\"" +
-                            player.username + " won\"}"
-                        );
+                    // simple anti-cheat: only allow +1 step
+                    if (index != player.progress + 1) {
                         return;
                     }
 
-                    // ---------------- FULL STATE SYNC ----------------
-                    broadcast(roomId, buildState(room));
+                    player.progress = index;
+
+                    // WIN CONDITION
+                    if (index >= room.words.size()) {
+                        room.finished = true;
+
+                        broadcast(roomId, Map.of(
+                                "type", "GAME_OVER",
+                                "winner", player.username + " won"
+                        ));
+
+                        return;
+                    }
+
+                    broadcastState(roomId, room);
                 }
             });
+
+            // =====================================================
+            // DISCONNECT
+            // =====================================================
 
             ws.onClose(ctx -> {
 
@@ -146,6 +189,8 @@ public class TypeMasterApplication {
                     if (room != null) {
                         room.players.removeIf(p -> p.ctx.equals(ctx));
 
+                        broadcastLobby(roomId);
+
                         if (room.players.isEmpty()) {
                             rooms.remove(roomId);
                         }
@@ -153,7 +198,6 @@ public class TypeMasterApplication {
                 }
 
                 playerRoom.remove(ctx);
-                System.out.println("Disconnected: " + ctx.sessionId());
             });
         });
     }
@@ -161,147 +205,175 @@ public class TypeMasterApplication {
     // =========================================================
     // START GAME
     // =========================================================
-    private static void startGame(String roomId, RoomState room) {
-        try {
-            var conn = Database.connect();
-            List<Word> allWords = WordRepository.findAll(conn);
-            conn.close();
 
-            Collections.shuffle(allWords);
+    static void startGame(String roomId, RoomState room) {
 
-            room.words = new ArrayList<>(
-                allWords.subList(0, Math.min(15, allWords.size()))
-            );
+        // fake word generator (replace with DB if needed)
+        room.words = generateWords(15);
 
-            broadcast(roomId,
-                "{\"type\":\"WORDS\",\"words\":" +
-                buildWordsJson(room.words) + "}"
-            );
+        broadcast(roomId, Map.of(
+                "type", "WORDS",
+                "words", room.words
+        ));
 
-            new Thread(() -> {
-                try {
-                    for (int i = 3; i >= 1; i--) {
-                        broadcast(roomId,
-                            "{\"type\":\"COUNTDOWN\",\"value\":" + i + "}"
-                        );
-                        Thread.sleep(1000);
-                    }
+        scheduler.schedule(() -> {
 
-                    room.started = true;
-                    room.startTime = System.currentTimeMillis();
+            room.started = true;
+            room.startTime = System.currentTimeMillis();
 
-                    broadcast(roomId,
-                        "{\"type\":\"START\",\"startTime\":" +
-                        room.startTime + "}"
-                    );
+            broadcast(roomId, Map.of(
+                    "type", "START",
+                    "startTime", room.startTime
+            ));
 
-                    // initial state push
-                    broadcast(roomId, buildState(room));
+            broadcastState(roomId, room);
 
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }).start();
+        }, 3, TimeUnit.SECONDS);
 
-        } catch (Exception e) {
-            e.printStackTrace();
+        // countdown
+        for (int i = 3; i >= 1; i--) {
+            int value = i;
+            scheduler.schedule(() -> {
+                broadcast(roomId, Map.of(
+                        "type", "COUNTDOWN",
+                        "value", value
+                ));
+            }, (3 - i), TimeUnit.SECONDS);
         }
     }
 
     // =========================================================
-    // STATE BUILDER (CORE FEATURE)
+    // STATE
     // =========================================================
-    private static String buildState(RoomState room) {
 
-        StringBuilder sb = new StringBuilder();
+    static void broadcastState(String roomId, RoomState room) {
 
-        sb.append("{\"type\":\"STATE\",\"players\":[");
+        List<Map<String, Object>> players = new ArrayList<>();
 
-        for (int i = 0; i < room.players.size(); i++) {
-            Player p = room.players.get(i);
-
-            sb.append("{")
-              .append("\"username\":\"").append(p.username).append("\",")
-              .append("\"progress\":").append(p.progress)
-              .append("}");
-
-            if (i < room.players.size() - 1) sb.append(",");
+        synchronized (room.players) {
+            for (Player p : room.players) {
+                players.add(Map.of(
+                        "username", p.username,
+                        "progress", p.progress,
+                        "ready", p.ready
+                ));
+            }
         }
 
-        sb.append("],");
-        sb.append("\"totalWords\":").append(room.words.size());
-        sb.append("}");
+        broadcast(roomId, Map.of(
+                "type", "STATE",
+                "players", players,
+                "totalWords", room.words.size()
+        ));
+    }
 
-        return sb.toString();
+    // =========================================================
+    // LOBBY
+    // =========================================================
+
+    static void broadcastLobby(String roomId) {
+
+        RoomState room = rooms.get(roomId);
+        if (room == null) return;
+
+        List<Map<String, Object>> players = new ArrayList<>();
+
+        synchronized (room.players) {
+            for (Player p : room.players) {
+                players.add(Map.of(
+                        "username", p.username,
+                        "ready", p.ready
+                ));
+            }
+        }
+
+        broadcast(roomId, Map.of(
+                "type", "LOBBY",
+                "players", players
+        ));
+    }
+
+    // =========================================================
+    // BROADCAST
+    // =========================================================
+
+    static void broadcast(String roomId, Object msg) {
+
+        RoomState room = rooms.get(roomId);
+        if (room == null) return;
+
+        String json;
+
+        try {
+            json = mapper.writeValueAsString(msg);
+        } catch (Exception e) {
+            return;
+        }
+
+        for (Player p : room.players) {
+            try {
+                if (p.ctx.session.isOpen()) {
+                    p.ctx.send(json);
+                }
+            } catch (Exception ignored) {}
+        }
     }
 
     // =========================================================
     // HELPERS
     // =========================================================
-    private static boolean allReady(RoomState room) {
-        if (room.players.size() < 2) return false;
 
-        for (Player p : room.players) {
-            if (!p.ready) return false;
-        }
-        return true;
-    }
-
-    private static Player findPlayer(RoomState room, WsContext ctx) {
+    static Player findPlayer(RoomState room, WsContext ctx) {
         for (Player p : room.players) {
             if (p.ctx.equals(ctx)) return p;
         }
         return null;
     }
 
-    private static void broadcast(String roomId, String message) {
-        RoomState room = rooms.get(roomId);
-        if (room == null) return;
+    static boolean allReady(RoomState room) {
+        if (room.players.size() < 1) return false;
 
         for (Player p : room.players) {
-            if (p.ctx.session.isOpen()) {
-                p.ctx.send(message);
-            }
+            if (!p.ready) return false;
         }
+
+        return true;
     }
 
-    private static String buildWordsJson(List<Word> words) {
-        StringBuilder sb = new StringBuilder("[");
-
-        for (int i = 0; i < words.size(); i++) {
-            Word w = words.get(i);
-
-            sb.append("{\"text\":\"")
-              .append(w.getText())
-              .append("\",\"difficulty\":\"")
-              .append(w.getDifficulty())
-              .append("\"}");
-
-            if (i < words.size() - 1) sb.append(",");
-        }
-
-        sb.append("]");
-        return sb.toString();
+    static void sendError(WsContext ctx, String message) {
+        try {
+            ctx.send(mapper.writeValueAsString(Map.of(
+                    "type", "ERROR",
+                    "message", message
+            )));
+        } catch (Exception ignored) {}
     }
 
     // =========================================================
-    // SIMPLE JSON PARSER (keep for now, but replace later)
+    // WORD GENERATOR (REPLACE WITH DB IF YOU WANT)
     // =========================================================
-    private static Map<String, String> simpleParse(String json) {
-        Map<String, String> map = new HashMap<>();
 
-        String clean = json
-                .replace("{", "")
-                .replace("}", "")
-                .replace("\"", "");
+    static List<Map<String, String>> generateWords(int n) {
 
-        for (String part : clean.split(",")) {
-            String[] kv = part.split(":");
-            if (kv.length == 2) {
-                map.put(kv[0].trim(), kv[1].trim());
-            }
+        String[] sample = {
+                "apple", "banana", "rocket", "keyboard", "java",
+                "spring", "socket", "browser", "cloud", "fast",
+                "react", "server", "network", "game", "speed"
+        };
+
+        List<Map<String, String>> words = new ArrayList<>();
+
+        Random r = new Random();
+
+        for (int i = 0; i < n; i++) {
+            String w = sample[r.nextInt(sample.length)];
+
+            words.add(Map.of(
+                    "text", w,
+                    "difficulty", "easy"
+            ));
         }
 
-        return map;
+        return words;
     }
 }
