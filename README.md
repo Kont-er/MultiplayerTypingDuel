@@ -1,6 +1,12 @@
-# TypeMaster
+# TypeMaster [WIP]
 
 A real-time multiplayer typing race game built with React, Java, WebSockets, and Javalin.
+
+---
+
+<img width="874" height="479" alt="TM2" src="https://github.com/user-attachments/assets/271e066d-8552-4d6a-864a-5cc42b919b91" />
+
+---
 
 ## Live Demo
 
@@ -17,6 +23,10 @@ A real-time multiplayer typing race game built with React, Java, WebSockets, and
 - Singleplayer mode
 - WebSocket-powered gameplay
 - Fast and lightweight UI
+
+---
+
+<img width="614" height="629" alt="TM1png" src="https://github.com/user-attachments/assets/ea0014f5-92fc-40c7-b04f-8c521562d82a" />
 
 ---
 
@@ -45,7 +55,7 @@ A real-time multiplayer typing race game built with React, Java, WebSockets, and
 
 ---
 
-## 📌 Future Improvements
+## Future Improvements
 
 - WPM and accuracy tracking
 - Match history
@@ -57,7 +67,7 @@ A real-time multiplayer typing race game built with React, Java, WebSockets, and
 
 ---
 
-## 📄 License
+## License
 
 MIT License
 
