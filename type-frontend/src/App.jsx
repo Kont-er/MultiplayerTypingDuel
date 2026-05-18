@@ -22,12 +22,13 @@ export default function App() {
   const [difficulty, setDifficulty] = useState("all");
 
   // MODE
-
+  const [mode, setMode] = useState(null);
   const [joined, setJoined] = useState(false);
 
   // PLAYER
 
   const [username, setUsername] = useState("");
+
   const [isReady, setIsReady] = useState(false);
 
   // GAME
