@@ -9,9 +9,7 @@ import java.util.concurrent.*;
 
 public class TypeMasterApplication {
 
-    // =========================================================
-    // MODELS
-    // =========================================================
+
 
     static class Player {
         WsContext ctx;
@@ -28,9 +26,7 @@ public class TypeMasterApplication {
         long startTime = 0;
     }
 
-    // =========================================================
-    // GLOBAL STATE
-    // =========================================================
+
 
     static final Map<String, RoomState> rooms = new ConcurrentHashMap<>();
     static final Map<WsContext, String> playerRoom = new ConcurrentHashMap<>();
@@ -38,9 +34,6 @@ public class TypeMasterApplication {
     static final ObjectMapper mapper = new ObjectMapper();
     static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
 
-    // =========================================================
-    // MAIN
-    // =========================================================
 
     public static void main(String[] args) {
 
@@ -50,9 +43,7 @@ public class TypeMasterApplication {
                 config.bundledPlugins.enableCors(cors -> cors.addRule(it -> it.anyHost()))
         ).start(port);
 
-        // =====================================================
-        // CREATE ROOM (INVITE LINK SYSTEM)
-        // =====================================================
+
 
         app.post("/api/create-room", ctx -> {
             String roomId = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
@@ -62,9 +53,7 @@ public class TypeMasterApplication {
             ctx.json(Map.of("roomId", roomId));
         });
 
-        // =====================================================
-        // WEBSOCKET
-        // =====================================================
+
 
         app.ws("/ws", ws -> {
 
@@ -85,9 +74,7 @@ public class TypeMasterApplication {
 
                 String type = (String) msg.get("type");
 
-                // =================================================
-                // JOIN ROOM
-                // =================================================
+
 
                 if ("JOIN".equals(type)) {
 
@@ -113,9 +100,6 @@ public class TypeMasterApplication {
                     broadcastLobby(roomId);
                 }
 
-                // =================================================
-                // READY
-                // =================================================
 
                 if ("READY".equals(type)) {
 
@@ -136,9 +120,7 @@ public class TypeMasterApplication {
                     }
                 }
 
-                // =================================================
-                // PROGRESS (ANTI-CHEAT BASIC VALIDATION)
-                // =================================================
+
 
                 if ("PROGRESS".equals(type)) {
 
@@ -175,9 +157,6 @@ public class TypeMasterApplication {
                 }
             });
 
-            // =====================================================
-            // DISCONNECT
-            // =====================================================
 
             ws.onClose(ctx -> {
 
@@ -202,9 +181,7 @@ public class TypeMasterApplication {
         });
     }
 
-    // =========================================================
-    // START GAME
-    // =========================================================
+
 
     static void startGame(String roomId, RoomState room) {
 
@@ -230,7 +207,6 @@ public class TypeMasterApplication {
 
         }, 3, TimeUnit.SECONDS);
 
-        // countdown
         for (int i = 3; i >= 1; i--) {
             int value = i;
             scheduler.schedule(() -> {
@@ -242,9 +218,6 @@ public class TypeMasterApplication {
         }
     }
 
-    // =========================================================
-    // STATE
-    // =========================================================
 
     static void broadcastState(String roomId, RoomState room) {
 
@@ -267,9 +240,7 @@ public class TypeMasterApplication {
         ));
     }
 
-    // =========================================================
-    // LOBBY
-    // =========================================================
+
 
     static void broadcastLobby(String roomId) {
 
@@ -293,9 +264,7 @@ public class TypeMasterApplication {
         ));
     }
 
-    // =========================================================
-    // BROADCAST
-    // =========================================================
+
 
     static void broadcast(String roomId, Object msg) {
 
@@ -318,10 +287,6 @@ public class TypeMasterApplication {
             } catch (Exception ignored) {}
         }
     }
-
-    // =========================================================
-    // HELPERS
-    // =========================================================
 
     static Player findPlayer(RoomState room, WsContext ctx) {
         for (Player p : room.players) {
@@ -348,10 +313,6 @@ public class TypeMasterApplication {
             )));
         } catch (Exception ignored) {}
     }
-
-    // =========================================================
-    // WORD GENERATOR (REPLACE WITH DB IF YOU WANT)
-    // =========================================================
 
     static List<Map<String, String>> generateWords(int n) {
 

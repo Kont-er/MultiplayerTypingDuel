@@ -2,74 +2,57 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export default function App() {
-  // =========================================================
   // CONFIG
-  // =========================================================
 
   const API_URL = "https://type-masters-production.up.railway.app";
   const WS_URL = "wss://type-masters-production.up.railway.app";
 
-  // =========================================================
   // SOCKET
-  // =========================================================
 
   const socketRef = useRef(null);
 
-  // =========================================================
   // ROOM
-  // =========================================================
 
   const roomId = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("room") || null;
   }, []);
 
-  // =========================================================
+  const [gameLength, setGameLength] = useState(30); // 0 = endless
+  const [difficulty, setDifficulty] = useState("all");
+
   // MODE
-  // =========================================================
 
-  const [mode, setMode] = useState(null); // single | multi
+  const [joined, setJoined] = useState(false);
 
-  // =========================================================
   // PLAYER
-  // =========================================================
 
   const [username, setUsername] = useState("");
   const [joined, setJoined] = useState(false);
   const [isReady, setIsReady] = useState(false);
 
-  // =========================================================
   // GAME
-  // =========================================================
 
   const [gameStarted, setGameStarted] = useState(false);
   const [gameFinished, setGameFinished] = useState(false);
   const [winner, setWinner] = useState(null);
 
-  // =========================================================
   // WORDS
-  // =========================================================
 
   const [words, setWords] = useState([]);
   const [index, setIndex] = useState(0);
   const [input, setInput] = useState("");
 
-  // =========================================================
   // COUNTDOWN
-  // =========================================================
 
   const [countdown, setCountdown] = useState(null);
 
-  // =========================================================
   // PLAYERS
-  // =========================================================
 
   const [players, setPlayers] = useState([]);
   const [totalWords, setTotalWords] = useState(0);
 
-  // =========================================================
   // AUTO DETECT MULTIPLAYER
-  // =========================================================
 
   useEffect(() => {
     if (roomId) {
@@ -77,9 +60,7 @@ export default function App() {
     }
   }, [roomId]);
 
-  // =========================================================
   // SINGLEPLAYER START
-  // =========================================================
 
   const startSingleplayer = async () => {
   try {
@@ -145,9 +126,7 @@ export default function App() {
     }
   };
 
-  // =========================================================
   // CONNECT SOCKET
-  // =========================================================
 
   useEffect(() => {
     if (!joined || mode !== "multi" || !roomId) {
@@ -172,60 +151,46 @@ export default function App() {
       const msg = JSON.parse(event.data);
 
       switch (msg.type) {
-        // =====================================================
         // LOBBY
-        // =====================================================
 
         case "LOBBY":
           setPlayers(msg.players || []);
           break;
 
-        // =====================================================
         // WORDS
-        // =====================================================
 
         case "WORDS":
           setWords(msg.words || []);
           break;
 
-        // =====================================================
         // COUNTDOWN
-        // =====================================================
 
         case "COUNTDOWN":
           setCountdown(msg.value);
           break;
 
-        // =====================================================
         // START
-        // =====================================================
 
         case "START":
           setCountdown(null);
           setGameStarted(true);
           break;
 
-        // =====================================================
         // STATE
-        // =====================================================
 
         case "STATE":
           setPlayers(msg.players || []);
           setTotalWords(msg.totalWords || 0);
           break;
 
-        // =====================================================
         // GAME OVER
-        // =====================================================
 
         case "GAME_OVER":
           setGameFinished(true);
           setWinner(msg.winner);
           break;
 
-        // =====================================================
         // ERROR
-        // =====================================================
 
         case "ERROR":
           alert(msg.message || "Something went wrong");
@@ -249,9 +214,7 @@ export default function App() {
     };
   }, [joined, roomId, username, mode]);
 
-  // =========================================================
   // CREATE MULTIPLAYER ROOM
-  // =========================================================
 
   const createRoom = async () => {
     try {
@@ -268,9 +231,7 @@ export default function App() {
     }
   };
 
-  // =========================================================
   // HANDLE READY
-  // =========================================================
 
   const handleReady = () => {
     if (isReady) return;
@@ -286,9 +247,7 @@ export default function App() {
     }
   };
 
-  // =========================================================
   // HANDLE INPUT
-  // =========================================================
 
   const currentWord = words[index];
 
@@ -305,9 +264,7 @@ export default function App() {
       setIndex(nextIndex);
       setInput("");
 
-      // =====================================================
       // SINGLEPLAYER
-      // =====================================================
 
       if (mode === "single") {
         setPlayers([
@@ -325,9 +282,7 @@ export default function App() {
         return;
       }
 
-      // =====================================================
       // MULTIPLAYER
-      // =====================================================
 
       socketRef.current?.send(
         JSON.stringify({
@@ -338,23 +293,13 @@ export default function App() {
     }
   };
 
-  // =========================================================
   // MAIN MENU
-  // =========================================================
 
   if (!mode) {
     return (
       <div style={styles.page}>
         <div style={styles.card}>
-          <h1 style={{ marginBottom: 30 }}>⚡ TypeMaster</h1>
-
-          <button
-            style={styles.button}
-            onClick={startSingleplayer}
-          >
-            Singleplayer
-          </button>
-
+          <h1 style={{ marginBottom: 30 }}> TypeMaster</h1>
           <button
             style={{
               ...styles.button,
@@ -369,9 +314,7 @@ export default function App() {
     );
   }
 
-  // =========================================================
   // USERNAME SCREEN
-  // =========================================================
 
   if (mode === "multi" && !joined) {
     return (
@@ -403,21 +346,17 @@ export default function App() {
     );
   }
 
-  // =========================================================
   // LOBBY
-  // =========================================================
 
   if (mode === "multi" && !gameStarted && !gameFinished) {
     return (
       <div style={styles.page}>
         <div style={styles.card}>
-          <h1>⚡ Multiplayer Lobby</h1>
+          <h1>Multiplayer Lobby</h1>
 
           <p style={{ color: "#94a3b8" }}>Room: {roomId}</p>
 
-          {/* ================================================= */}
           {/* INVITE LINK */}
-          {/* ================================================= */}
 
           <div style={{ marginTop: 20 }}>
             <p>Invite Link</p>
@@ -437,9 +376,7 @@ export default function App() {
             </button>
           </div>
 
-          {/* ================================================= */}
           {/* READY BUTTON */}
-          {/* ================================================= */}
 
           <button
             style={{
@@ -450,12 +387,10 @@ export default function App() {
             disabled={isReady}
             onClick={handleReady}
           >
-            {isReady ? "Ready ✔" : "Click Ready"}
+            {isReady ? "Ready" : "Click Ready"}
           </button>
 
-          {/* ================================================= */}
           {/* PLAYERS */}
-          {/* ================================================= */}
 
           <div style={{ marginTop: 30, textAlign: "left" }}>
             <h3>Players</h3>
@@ -477,7 +412,7 @@ export default function App() {
                 <span>{p.username}</span>
 
                 <span>
-                  {p.ready ? "✔ Ready" : "⏳ Not Ready"}
+                  {p.ready ? "Ready" : "Not Ready"}
                 </span>
               </div>
             ))}
@@ -487,9 +422,7 @@ export default function App() {
     );
   }
 
-  // =========================================================
   // GAME OVER
-  // =========================================================
 
   if (gameFinished) {
     return (
@@ -515,26 +448,20 @@ export default function App() {
     );
   }
 
-  // =========================================================
   // GAME SCREEN
-  // =========================================================
 
   return (
     <div style={styles.page}>
       <div style={styles.container}>
-        <h1 style={{ textAlign: "center" }}>⚡ TypeMaster</h1>
+        <h1 style={{ textAlign: "center" }}> TypeMaster</h1>
 
-        {/* ================================================= */}
         {/* COUNTDOWN */}
-        {/* ================================================= */}
 
         {countdown !== null && (
           <div style={styles.countdown}>{countdown}</div>
         )}
 
-        {/* ================================================= */}
         {/* PROGRESS BARS */}
-        {/* ================================================= */}
 
         <div style={{ marginTop: 30 }}>
           {players.map((p, i) => (
@@ -567,15 +494,11 @@ export default function App() {
           ))}
         </div>
 
-        {/* ================================================= */}
         {/* CURRENT WORD */}
-        {/* ================================================= */}
 
         <div style={styles.word}>{currentWord?.text}</div>
 
-        {/* ================================================= */}
         {/* INPUT */}
-        {/* ================================================= */}
 
         <input
           autoFocus
@@ -590,9 +513,7 @@ export default function App() {
   );
 }
 
-// =========================================================
 // STYLES
-// =========================================================
 
 const styles = {
   page: {
