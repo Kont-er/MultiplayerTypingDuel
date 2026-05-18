@@ -28,7 +28,6 @@ export default function App() {
   // PLAYER
 
   const [username, setUsername] = useState("");
-  const [joined, setJoined] = useState(false);
   const [isReady, setIsReady] = useState(false);
 
   // GAME
