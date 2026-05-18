@@ -1,41 +1,63 @@
-# Typing Duel (Real-Time Multiplayer)
+# TypeMaster
 
-A lightweight browser-based real-time multiplayer typing game where two players compete to type the same text the fastest.
+A real-time multiplayer typing race game built with React, Java, WebSockets, and Javalin.
 
-## Goal
+## Live Demo
 
-This project is focused on learning:
-- Real-time browser multiplayer communication
-- WebSocket-based client/server interaction
-- Simple game state synchronization
-- Server-side validation of results
+[Play TypeMaster](https://www.kont-er.eu/)
 
-## Game Concept
+---
 
-- Two players are matched in a room
-- Both receive the same text prompt
-- The first player to correctly complete the text wins
-- The server determines the winner
+## Features
+
+- Real-time multiplayer typing races
+- Private room system
+- Live progress bars
+- Countdown synchronization
+- Singleplayer mode
+- WebSocket-powered gameplay
+- Fast and lightweight UI
+
+---
 
 ## Tech Stack
 
-Backend:
-- Python (FastAPI or websockets)
-- WebSockets for real-time communication
+### Frontend
+- React
+- JavaScript
+- WebSockets
 
-Frontend:
-- HTML, CSS, JavaScript
-- Simple browser-based UI
+### Backend
+- Java
+- Javalin
+- Jackson
 
-## Flow
+---
 
-1. Player connects to server
-2. Players are matched into a room
-3. Both receive the same text
-4. Timer starts when game begins
-5. Players type in real time
-6. Server validates completion and decides winner
+## How It Works
 
-## Status
+1. Create a multiplayer room
+2. Share the invite link
+3. Players join and click ready
+4. Countdown starts
+5. Type the words as fast as possible
+6. First player to finish wins
 
-Early-stage learning project
+---
+
+## 📌 Future Improvements
+
+- WPM and accuracy tracking
+- Match history
+- Ranked matchmaking
+- Better anti-cheat
+- Mobile optimization
+- Reconnect support
+- Difficulty settings
+
+---
+
+## 📄 License
+
+MIT License
+
